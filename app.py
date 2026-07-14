@@ -1,6 +1,6 @@
 import base64
 import logging
-import os
+import mimetypes
 import tempfile
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -26,31 +26,28 @@ with open("prompt.md", "r", encoding="utf-8") as f:
 
 class Markitdoen_extractor:
 
-    def __init__(self, file_bytes: bytes, filename: str):
+    def __init__(self, file_bytes: bytes, file_ext: str):
         self.client = MarkItDown(enable_plugins=True,
                                  llm_client=OpenAI(base_url=llm_base_url, api_key=llm_api_key),
                                  llm_model=llm_model,
                                  llm_prompt=llm_prompt)
         self.file_bytes = file_bytes
-        self.filename = filename
-        self.file_ext = os.path.splitext(self.filename)[1]
+        self.file_ext = file_ext
 
-    def convert_to_markdown(self, ) -> str:
+    def convert_to_markdown(self) -> str:
         return self.client.convert_stream(BytesIO(self.file_bytes), file_extension=self.file_ext).markdown
 
 
 class Pandoc_extractor:
 
-    def __init__(self, file_bytes: bytes, filename: str):
+    def __init__(self, file_bytes: bytes, file_ext: str):
         self.client = OpenAI(base_url=llm_base_url, api_key=llm_api_key)
         self.file_bytes = file_bytes
-        self.filename = filename
-        self.file_ext = os.path.splitext(self.filename)[1]
+        self.file_ext = file_ext
 
-    def convert_to_markdown(self, ) -> str:
+    def convert_to_markdown(self) -> str:
         with tempfile.TemporaryDirectory() as media_dir:
-            format = self.file_ext.lstrip('.')
-            ast_string = pypandoc.convert_text(self.file_bytes, "json", format=format, extra_args=[f"--extract-media={Path(media_dir)}"])
+            ast_string = pypandoc.convert_text(self.file_bytes, "json", format=self.file_ext, extra_args=[f"--extract-media={Path(media_dir)}"])
             input_stream = StringIO(ast_string)
             doc = pf.load(input_stream)
             altered_doc = doc.walk(self.get_image_description)
@@ -87,16 +84,16 @@ class Pandoc_extractor:
 
 
 @app.put("/process")
-async def process_document(request: Request, x_filename: str = Header(None)):
-    logger.info(f"Processing document: {x_filename}")
-    file_ext = os.path.splitext(x_filename)[1]
+async def process_document(request: Request, x_file_content_type: str = Header(None)):
+    logger.info(f"Processing document: {x_file_content_type}")
+    file_ext = mimetypes.guess_extension(x_file_content_type).lstrip('.')
     file_bytes = await request.body()
     try:
-        if file_ext == '.pdf':
-            markdown_text = Markitdoen_extractor(file_bytes, x_filename).convert_to_markdown()
+        if file_ext == 'pdf':
+            markdown_text = Markitdoen_extractor(file_bytes, file_ext).convert_to_markdown()
         else:
-            markdown_text = Pandoc_extractor(file_bytes, x_filename).convert_to_markdown()
-        return {"page_content": markdown_text, "metadata": {"source": x_filename}}
+            markdown_text = Pandoc_extractor(file_bytes, file_ext).convert_to_markdown()
+        return {"page_content": markdown_text, "metadata": {"content_type": x_file_content_type}}
     except Exception as E:
-        logger.error(f"Extraction failed for {x_filename}: {str(E)}")
+        logger.error(f"Extraction failed for {x_file_content_type}: {str(E)}")
         return PlainTextResponse(content=f"{str(E)}", status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
