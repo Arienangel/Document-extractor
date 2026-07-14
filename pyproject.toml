@@ -1,0 +1,14 @@
+[project]
+name = "document-extractor"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.139.0",
+    "markitdown-ocr>=0.1.0",
+    "markitdown[all]>=0.1.5",
+    "openai>=2.45.0",
+    "panflute>=2.3.1",
+    "pillow>=12.3.0",
+    "pypandoc>=1.17",
+    "uvicorn>=0.51.0",
+]
