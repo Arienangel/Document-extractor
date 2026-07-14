@@ -90,10 +90,12 @@ async def process_document(request: Request, x_file_content_type: str = Header(N
     file_bytes = await request.body()
     try:
         if file_ext == 'pdf':
-            markdown_text = Markitdoen_extractor(file_bytes, file_ext).convert_to_markdown()
+            content = Markitdoen_extractor(file_bytes, file_ext).convert_to_markdown()
+        elif file_ext in ['docx', 'epub', 'html', 'latex', 'odt', 'pptx', 'rtf', 'xlsx']:
+            content = Pandoc_extractor(file_bytes, file_ext).convert_to_markdown()
         else:
-            markdown_text = Pandoc_extractor(file_bytes, file_ext).convert_to_markdown()
-        return {"page_content": markdown_text, "metadata": {"content_type": x_file_content_type}}
+            content = file_bytes.decode("utf-8")
+        return {"page_content": content, "metadata": {"content_type": x_file_content_type}}
     except Exception as E:
         logger.error(f"Extraction failed for {x_file_content_type}: {str(E)}")
         return PlainTextResponse(content=f"{str(E)}", status_code=status.HTTP_422_UNPROCESSABLE_CONTENT)
