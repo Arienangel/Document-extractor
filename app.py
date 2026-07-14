@@ -1,6 +1,7 @@
 import base64
 import logging
 import mimetypes
+import subprocess
 import tempfile
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -23,6 +24,7 @@ llm_model = "qwen3-vl-4B-Instruct-UD-Q4_K_XL"
 with open("prompt.md", "r", encoding="utf-8") as f:
     llm_prompt = f.read()
 
+odf_mapping = {'odt': 'docx', 'ods': 'xlsx', 'odp': 'pptx'}
 
 class Markitdoen_extractor:
 
@@ -82,6 +84,18 @@ class Pandoc_extractor:
 
             return pf.Str(description)
 
+def convert_odt_to_ms(file_bytes: bytes, file_ext: str):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        input_path = tmpdir / f'convert.{file_ext}'
+        output_ext = odf_mapping[file_ext]
+        output_path = tmpdir / f'convert.{output_ext}'
+        with open(input_path, 'wb') as f:
+            f.write(file_bytes)
+        subprocess.run(['soffice', '--convert-to', output_ext, input_path], cwd=tmpdir)
+        with open(output_path, 'rb') as f:
+            content = f.read()
+        return content, output_ext
 
 @app.put("/process")
 async def process_document(request: Request, x_file_content_type: str = Header(None)):
@@ -89,9 +103,11 @@ async def process_document(request: Request, x_file_content_type: str = Header(N
     file_ext = mimetypes.guess_extension(x_file_content_type).lstrip('.')
     file_bytes = await request.body()
     try:
-        if file_ext == 'pdf':
+        if file_ext in odf_mapping.keys():
+            file_bytes, file_ext = convert_odt_to_ms(file_bytes, file_ext)
+        if file_ext in ['docx', 'xlsx', 'pptx', 'pdf', 'epub', 'html', 'csv']:
             content = Markitdoen_extractor(file_bytes, file_ext).convert_to_markdown()
-        elif file_ext in ['docx', 'epub', 'html', 'latex', 'odt', 'pptx', 'rtf', 'xlsx']:
+        elif file_ext in ['bib', 'tex', 'ipynb', 'rst']:
             content = Pandoc_extractor(file_bytes, file_ext).convert_to_markdown()
         else:
             content = file_bytes.decode("utf-8")
